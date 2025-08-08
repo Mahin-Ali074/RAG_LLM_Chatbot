@@ -1,7 +1,3 @@
-__import__('pysqlite3')
-import sys
-sys.modules['sqlite3'] = sys.modules.pop['pysqlite3']
-
 import streamlit as st
 import os
 import dotenv
@@ -33,7 +29,7 @@ st.set_page_config(
 st.html("""<h1 style="text-align: center;">🦾🤖 <i> RAGbot </i> 📚🔎</h1> """)
 
 if "session_id" not in st.session_state:
-    st.session_state.session_id = str(uuid.uuid4)
+    st.session_state.session_id = str(uuid.uuid4())
 
 if "rag_sources" not in st.session_state:
     st.session_state.rag_sources = []
@@ -54,7 +50,37 @@ with st.sidebar:
     st.divider()
     cols0 = st.columns(2)
     with cols0[0]:
+            is_vector_db_loaded = ("vector_db" in st.session_state and st.session_state.vector_db is not None)
+            st.toggle(
+                "Use RAG", 
+                value=is_vector_db_loaded, 
+                key="use_rag", 
+                disabled=not is_vector_db_loaded,
+            )
+    with cols0[1]:
         st.button("Clear Chat", on_click=lambda: st.session_state.messages.clear(), type="primary")
+    
+    st.header("📚 RAG Sources")
+
+    # File Upload
+    st.file_uploader(
+        "Upload Documents",
+        type = ["pdf", "docx", "txt", "md", "doc"],
+        accept_multiple_files = True,
+        on_change = load_doc_to_db,
+        key = "rag_docs",
+    )
+
+    # URL Input
+    st.text_input(
+        "Enter URL to scrape",
+        placeholder = "https://example.com",
+        on_change = load_url_to_db,
+        key = "rag_url",
+    )
+
+    with st.expander(f"Documents in DB ({0 if not is_vector_db_loaded else len(st.session_state.vector_db.get()['metadatas'])})"):
+        st.write([] if not is_vector_db_loaded else [meta["source"] for meta in st.session_state.vector_db.get()["metadatas"]])
 
 
 
@@ -82,4 +108,7 @@ if prompt := st.chat_input("Your message"):
 
         messages = [HumanMessage(content=m["content"]) if m["role"] == "user" else AIMessage(content=m["content"]) for m in st.session_state.messages]
         
-        st.write_stream(stream_llm_response(llm_stream, messages))
+        if not st.session_state.use_rag:
+                st.write_stream(stream_llm_response(llm_stream, messages))
+        else:
+            st.write_stream(stream_llm_rag_response(llm_stream, messages))
